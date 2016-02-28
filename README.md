@@ -69,3 +69,25 @@ f.Wait()
 // about 2 second
 // exited!
 ```
+
+
+```{go}
+f := flow.New(0)
+go func() {
+	f.Add(1)
+	defer f.Done()
+loop:
+	for {
+		select {
+		case <-f.IsClose():
+			time.Sleep(time.Second)
+			break loop
+		}
+	}
+	println("exited!")
+}()
+
+f.Wait()
+// Ctrl+C -> wait about 1 second
+// exited!
+```
