@@ -33,8 +33,11 @@ go func() {
 	f.Add(1)
 	defer f.Done()
 
-	time.Sleep(time.Second)
-	atomic.StoreInt32(&done, 1)
+	select {
+	case <-time.After(time.Second):
+		atomic.StoreInt32(&done, 1)
+	case <-f.IsClose():
+	}
 }()
 
 err := f.Wait()
