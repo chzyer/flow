@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 )
 
 type Flow struct {
@@ -28,6 +29,20 @@ func New(n int) *Flow {
 	}
 	f.Add(n)
 	return f
+}
+
+const (
+	F_CLOSED  = true
+	F_TIMEOUT = false
+)
+
+func (f *Flow) CloseOrWait(duration time.Duration) bool {
+	select {
+	case <-time.After(duration):
+		return F_TIMEOUT
+	case <-f.IsClose():
+		return F_CLOSED
+	}
 }
 
 func (f *Flow) Error(err error) {
@@ -67,12 +82,7 @@ func (f *Flow) Stop() {
 }
 
 func (f *Flow) IsClosed() bool {
-	select {
-	case <-f.stopChan:
-		return true
-	default:
-		return false
-	}
+	return atomic.LoadInt32(&f.stoped) == 1
 }
 
 func (f *Flow) IsClose() chan struct{} {
