@@ -7,9 +7,12 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"gopkg.in/logex.v1"
 )
 
 type Flow struct {
+	Debug    *bool
 	errChan  chan error
 	stopChan chan struct{}
 	ref      *int32
@@ -17,18 +20,25 @@ type Flow struct {
 	Parent   *Flow
 	Children []*Flow
 	stoped   int32
+	onClose  func()
 
 	mutex sync.Mutex
 }
 
 func New(n int) *Flow {
+	debug := false
 	f := &Flow{
+		Debug:    &debug,
 		errChan:  make(chan error, 1),
 		stopChan: make(chan struct{}),
 		ref:      new(int32),
 	}
 	f.Add(n)
 	return f
+}
+
+func (f *Flow) SetOnClose(exit func()) {
+	f.onClose = exit
 }
 
 const (
@@ -52,6 +62,7 @@ func (f *Flow) Error(err error) {
 func (f *Flow) Fork(n int) *Flow {
 	f2 := New(n)
 	f2.Parent = f
+	f2.Debug = f.Debug
 	f.Children = append(f.Children, f2)
 	f.Add(1) // for f2
 	return f2
@@ -66,6 +77,13 @@ func (f *Flow) StopAll() {
 }
 
 func (f *Flow) Close() {
+	if *f.Debug {
+		logex.DownLevel(1).Info("close")
+	}
+	f.close()
+}
+
+func (f *Flow) close() {
 	f.Stop()
 	f.wait()
 }
@@ -79,6 +97,9 @@ func (f *Flow) Stop() {
 	for _, cf := range f.Children {
 		cf.Stop()
 	}
+	if f.onClose != nil {
+		f.onClose()
+	}
 }
 
 func (f *Flow) IsClosed() bool {
@@ -91,6 +112,9 @@ func (f *Flow) IsClose() chan struct{} {
 
 func (f *Flow) Add(n int) {
 	atomic.AddInt32(f.ref, int32(n))
+	if *f.Debug {
+		logex.DownLevel(1).Info("add:", n, "ref:", *f.ref)
+	}
 	f.wg.Add(n)
 }
 
@@ -101,12 +125,21 @@ func (f *Flow) Done() {
 	}
 }
 
+func (f *Flow) DoneAndClose() {
+	if *f.Debug {
+		logex.DownLevel(1).Info("done and close, ref:", *f.ref)
+	}
+	f.Done()
+	f.close()
+}
+
 func (f *Flow) wait() {
 	<-f.stopChan
 	f.wg.Wait()
 
 	if f.Parent != nil {
 		f.Parent.Done()
+		f.Parent = nil
 	}
 }
 
