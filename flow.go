@@ -1,15 +1,32 @@
 package flow
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"os/signal"
+	"path"
+	"reflect"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
-
-	"gopkg.in/logex.v1"
 )
+
+var (
+	pkgPath = reflect.TypeOf(Flow{}).PkgPath()
+)
+
+type debugInfo struct {
+	Stack string
+	Info  string
+}
+
+func (d *debugInfo) String() string {
+	return d.Stack + " - " + d.Info
+}
 
 type Flow struct {
 	Debug    *bool
@@ -20,9 +37,12 @@ type Flow struct {
 	Parent   *Flow
 	Children []*Flow
 	stoped   int32
-	onClose  func()
+	onClose  []func()
+	id       uintptr
 
-	mutex sync.Mutex
+	mutex   sync.Mutex
+	debug   []debugInfo
+	printed int32
 }
 
 func New(n int) *Flow {
@@ -33,12 +53,40 @@ func New(n int) *Flow {
 		stopChan: make(chan struct{}),
 		ref:      new(int32),
 	}
+	f.appendDebug("init")
 	f.Add(n)
 	return f
 }
 
-func (f *Flow) SetOnClose(exit func()) {
-	f.onClose = exit
+func (f *Flow) printDebug() {
+	buf := bytes.NewBuffer(nil)
+	maxLength := 0
+	for _, d := range f.debug {
+		if maxLength < len(d.Stack) {
+			maxLength = len(d.Stack)
+		}
+	}
+	fill := func(a string, n int) string {
+		return a + strings.Repeat(" ", n-len(a))
+	}
+	buf.WriteString("\n")
+	for _, d := range f.debug {
+		buf.WriteString(fmt.Sprint(&f) + " ")
+		buf.WriteString(fill(d.Stack, maxLength) + " - " + d.Info + "\n")
+	}
+	print(buf.String())
+}
+
+func (f *Flow) appendDebug(info string) {
+	pc, fp, line, _ := runtime.Caller(f.getCaller())
+	name := runtime.FuncForPC(pc).Name()
+	stack := fmt.Sprintf("%v:%v %v", path.Base(fp), line, path.Base(name))
+	f.debug = append(f.debug, debugInfo{stack, info})
+}
+
+func (f *Flow) SetOnClose(exit func()) *Flow {
+	f.onClose = append(f.onClose, exit)
+	return f
 }
 
 const (
@@ -59,6 +107,10 @@ func (f *Flow) Error(err error) {
 	f.errChan <- err
 }
 
+func (f *Flow) ForkTo(ref **Flow, exit func()) {
+	*ref = f.Fork(0).SetOnClose(exit)
+}
+
 func (f *Flow) Fork(n int) *Flow {
 	f2 := New(n)
 	f2.Parent = f
@@ -77,9 +129,7 @@ func (f *Flow) StopAll() {
 }
 
 func (f *Flow) Close() {
-	if *f.Debug {
-		logex.DownLevel(1).Info("close")
-	}
+	f.appendDebug("close")
 	f.close()
 }
 
@@ -92,13 +142,18 @@ func (f *Flow) Stop() {
 	if !atomic.CompareAndSwapInt32(&f.stoped, 0, 1) {
 		return
 	}
+	f.appendDebug("stop")
 
 	close(f.stopChan)
 	for _, cf := range f.Children {
 		cf.Stop()
 	}
-	if f.onClose != nil {
-		f.onClose()
+	if len(f.onClose) > 0 {
+		go func() {
+			for _, f := range f.onClose {
+				f()
+			}
+		}()
 	}
 }
 
@@ -112,10 +167,22 @@ func (f *Flow) IsClose() chan struct{} {
 
 func (f *Flow) Add(n int) {
 	atomic.AddInt32(f.ref, int32(n))
-	if *f.Debug {
-		logex.DownLevel(1).Info("add:", n, "ref:", *f.ref)
-	}
+	f.appendDebug(fmt.Sprintf("add: %v, ref: %v", n, *f.ref))
 	f.wg.Add(n)
+}
+
+func (f *Flow) getCaller() int {
+	for i := 0; ; i++ {
+		pc, _, _, ok := runtime.Caller(i)
+		if !ok {
+			break
+		}
+		f := runtime.FuncForPC(pc).Name()
+		if !strings.HasPrefix(f, pkgPath) {
+			return i - 1
+		}
+	}
+	return 0
 }
 
 func (f *Flow) Done() {
@@ -126,16 +193,28 @@ func (f *Flow) Done() {
 }
 
 func (f *Flow) DoneAndClose() {
-	if *f.Debug {
-		logex.DownLevel(1).Info("done and close, ref:", *f.ref)
-	}
 	f.Done()
+	f.appendDebug(fmt.Sprintf("done and close, ref: %v", *f.ref))
 	f.close()
 }
 
 func (f *Flow) wait() {
+	f.appendDebug("wait")
+
+	done := make(chan struct{})
+	if *f.Debug && atomic.CompareAndSwapInt32(&f.printed, 0, 1) {
+		go func() {
+			select {
+			case <-done:
+				return
+			case <-time.After(400 * time.Millisecond):
+				f.printDebug()
+			}
+		}()
+	}
 	<-f.stopChan
 	f.wg.Wait()
+	close(done)
 
 	if f.Parent != nil {
 		f.Parent.Done()
@@ -150,13 +229,25 @@ func (f *Flow) Wait() error {
 	var err error
 	select {
 	case <-f.IsClose():
+		f.appendDebug("got closed")
 	case <-signalChan:
+		f.appendDebug("got signal")
 		f.Stop()
 	case err = <-f.errChan:
+		f.appendDebug(fmt.Sprintf("got error: %v", err))
+
 		if err != nil {
 			f.Stop()
 		}
 	}
+
+	go func() {
+		<-signalChan
+		// force close
+		println("force close")
+		os.Exit(1)
+	}()
+
 	f.wait()
 	return err
 }
