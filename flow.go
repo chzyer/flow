@@ -16,7 +16,8 @@ import (
 )
 
 var (
-	pkgPath = reflect.TypeOf(Flow{}).PkgPath()
+	pkgPath      = reflect.TypeOf(Flow{}).PkgPath()
+	DefaultDebug = false
 )
 
 type debugInfo struct {
@@ -29,7 +30,6 @@ func (d *debugInfo) String() string {
 }
 
 type Flow struct {
-	Debug    *bool
 	errChan  chan error
 	stopChan chan struct{}
 	ref      *int32
@@ -45,17 +45,18 @@ type Flow struct {
 	printed int32
 }
 
-func New(n int) *Flow {
-	debug := false
+func NewEx(n int) *Flow {
 	f := &Flow{
-		Debug:    &debug,
 		errChan:  make(chan error, 1),
 		stopChan: make(chan struct{}),
 		ref:      new(int32),
 	}
 	f.appendDebug("init")
-	f.Add(n)
 	return f
+}
+
+func New() *Flow {
+	return NewEx(0)
 }
 
 func (f *Flow) printDebug() {
@@ -112,9 +113,8 @@ func (f *Flow) ForkTo(ref **Flow, exit func()) {
 }
 
 func (f *Flow) Fork(n int) *Flow {
-	f2 := New(n)
+	f2 := NewEx(n)
 	f2.Parent = f
-	f2.Debug = f.Debug
 	f.Children = append(f.Children, f2)
 	f.Add(1) // for f2
 	return f2
@@ -202,7 +202,7 @@ func (f *Flow) wait() {
 	f.appendDebug("wait")
 
 	done := make(chan struct{})
-	if *f.Debug && atomic.CompareAndSwapInt32(&f.printed, 0, 1) {
+	if DefaultDebug && atomic.CompareAndSwapInt32(&f.printed, 0, 1) {
 		go func() {
 			select {
 			case <-done:
