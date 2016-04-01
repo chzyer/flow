@@ -115,6 +115,8 @@ func (f *Flow) ForkTo(ref **Flow, exit func()) {
 func (f *Flow) Fork(n int) *Flow {
 	f2 := NewEx(n)
 	f2.Parent = f
+	// TODO(chzyer): test it !
+	f2.errChan = f.errChan
 	f.Children = append(f.Children, f2)
 	f.Add(1) // for f2
 	return f2
