@@ -37,6 +37,7 @@ type Flow struct {
 	Parent   *Flow
 	Children []*Flow
 	stoped   int32
+	exited   int32
 	onClose  []func()
 	id       uintptr
 
@@ -57,6 +58,10 @@ func NewEx(n int) *Flow {
 
 func New() *Flow {
 	return NewEx(0)
+}
+
+func (f *Flow) MarkExit() bool {
+	return atomic.CompareAndSwapInt32(&f.exited, 0, 1)
 }
 
 func (f *Flow) printDebug() {
@@ -86,6 +91,11 @@ func (f *Flow) appendDebug(info string) {
 }
 
 func (f *Flow) SetOnClose(exit func()) *Flow {
+	f.onClose = []func(){exit}
+	return f
+}
+
+func (f *Flow) AddOnClose(exit func()) *Flow {
 	f.onClose = append(f.onClose, exit)
 	return f
 }
@@ -109,7 +119,7 @@ func (f *Flow) Error(err error) {
 }
 
 func (f *Flow) ForkTo(ref **Flow, exit func()) {
-	*ref = f.Fork(0).SetOnClose(exit)
+	*ref = f.Fork(0).AddOnClose(exit)
 }
 
 func (f *Flow) Fork(n int) *Flow {
@@ -209,7 +219,7 @@ func (f *Flow) wait() {
 			select {
 			case <-done:
 				return
-			case <-time.After(400 * time.Millisecond):
+			case <-time.After(1000 * time.Millisecond):
 				f.printDebug()
 			}
 		}()
