@@ -105,6 +105,15 @@ const (
 	F_TIMEOUT = false
 )
 
+func (f *Flow) Tick(t *time.Ticker) bool {
+	select {
+	case <-t.C:
+		return F_TIMEOUT
+	case <-f.IsClose():
+		return F_CLOSED
+	}
+}
+
 func (f *Flow) CloseOrWait(duration time.Duration) bool {
 	select {
 	case <-time.After(duration):
