@@ -64,6 +64,10 @@ func (f *Flow) MarkExit() bool {
 	return atomic.CompareAndSwapInt32(&f.exited, 0, 1)
 }
 
+func (f *Flow) IsExit() bool {
+	return atomic.LoadInt32(&f.exited) == 1
+}
+
 func (f *Flow) printDebug() {
 	buf := bytes.NewBuffer(nil)
 	maxLength := 0
@@ -223,6 +227,7 @@ func (f *Flow) wait() {
 	f.appendDebug("wait")
 
 	done := make(chan struct{})
+	printed := int32(0)
 	if DefaultDebug && atomic.CompareAndSwapInt32(&f.printed, 0, 1) {
 		go func() {
 			select {
@@ -230,12 +235,16 @@ func (f *Flow) wait() {
 				return
 			case <-time.After(1000 * time.Millisecond):
 				f.printDebug()
+				atomic.StoreInt32(&printed, 1)
 			}
 		}()
 	}
 	<-f.stopChan
 	f.wg.Wait()
 	close(done)
+	if atomic.LoadInt32(&printed) == 1 {
+		println(fmt.Sprint(&f) + " - exit")
+	}
 
 	if f.Parent != nil {
 		f.Parent.Done()
