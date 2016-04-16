@@ -220,7 +220,7 @@ func (f *Flow) Done() {
 func (f *Flow) DoneAndClose() {
 	f.Done()
 	f.appendDebug(fmt.Sprintf("done and close, ref: %v", *f.ref))
-	f.close()
+	f.Stop()
 }
 
 func (f *Flow) wait() {
