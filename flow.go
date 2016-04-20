@@ -77,7 +77,7 @@ func (f *Flow) IsExit() bool {
 	return atomic.LoadInt32(&f.exited) == 1
 }
 
-func (f *Flow) printDebug() {
+func (f *Flow) GetDebug() []byte {
 	buf := bytes.NewBuffer(nil)
 	maxLength := 0
 	for _, d := range f.debug {
@@ -90,10 +90,13 @@ func (f *Flow) printDebug() {
 	}
 	buf.WriteString("\n")
 	for _, d := range f.debug {
-		buf.WriteString(fmt.Sprint(&f) + " ")
 		buf.WriteString(fill(d.Stack, maxLength) + " - " + d.Info + "\n")
 	}
-	print(buf.String())
+	return buf.Bytes()
+}
+
+func (f *Flow) printDebug() {
+	println(string(f.GetDebug()))
 }
 
 func (f *Flow) appendDebug(info string) {
