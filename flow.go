@@ -60,6 +60,15 @@ func New() *Flow {
 	return NewEx(0)
 }
 
+func (f *Flow) WaitNotify(ch chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	case <-f.IsClose():
+		return false
+	}
+}
+
 func (f *Flow) MarkExit() bool {
 	return atomic.CompareAndSwapInt32(&f.exited, 0, 1)
 }
