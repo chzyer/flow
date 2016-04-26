@@ -53,6 +53,7 @@ func NewEx(n int) *Flow {
 		ref:      new(int32),
 	}
 	f.appendDebug("init")
+	f.Add(n)
 	return f
 }
 
