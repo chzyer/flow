@@ -126,6 +126,12 @@ func (f *Flow) appendDebug(info string) {
 }
 
 func (f *Flow) SetOnClose(exit func()) *Flow {
+	if f.IsClosed() {
+		f.appendDebug("set close after closed")
+		exit()
+		return f
+	}
+
 	f.onClose = []func(){exit}
 	return f
 }
