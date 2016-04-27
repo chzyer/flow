@@ -175,7 +175,9 @@ func (f *Flow) Error(err error) {
 }
 
 func (f *Flow) ForkTo(ref **Flow, exit func()) {
-	*ref = f.Fork(0).AddOnClose(exit)
+	child := f.Fork(0)
+	*ref = child
+	child.AddOnClose(exit)
 }
 
 func (f *Flow) Fork(n int) *Flow {
