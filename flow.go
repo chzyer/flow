@@ -21,8 +21,10 @@ var (
 )
 
 type debugInfo struct {
-	Stack string
-	Info  string
+	Time     string
+	FileInfo string
+	Stack    string
+	Info     string
 }
 
 func (d *debugInfo) String() string {
@@ -80,10 +82,16 @@ func (f *Flow) IsExit() bool {
 
 func (f *Flow) GetDebug() []byte {
 	buf := bytes.NewBuffer(nil)
-	maxLength := 0
+	var stackML, fileML, timeML int
 	for _, d := range f.debug {
-		if maxLength < len(d.Stack) {
-			maxLength = len(d.Stack)
+		if stackML < len(d.Stack) {
+			stackML = len(d.Stack)
+		}
+		if fileML < len(d.FileInfo) {
+			fileML = len(d.FileInfo)
+		}
+		if timeML < len(d.Time) {
+			timeML = len(d.Time)
 		}
 	}
 	fill := func(a string, n int) string {
@@ -91,7 +99,11 @@ func (f *Flow) GetDebug() []byte {
 	}
 	buf.WriteString("\n")
 	for _, d := range f.debug {
-		buf.WriteString(fill(d.Stack, maxLength) + " - " + d.Info + "\n")
+		buf.WriteString(fmt.Sprintf("%v %v %v - %v\n",
+			fill(d.Time, timeML),
+			fill(d.FileInfo, fileML),
+			fill(d.Stack, stackML), d.Info,
+		))
 	}
 	return buf.Bytes()
 }
@@ -103,8 +115,12 @@ func (f *Flow) printDebug() {
 func (f *Flow) appendDebug(info string) {
 	pc, fp, line, _ := runtime.Caller(f.getCaller())
 	name := runtime.FuncForPC(pc).Name()
-	stack := fmt.Sprintf("%v:%v %v", path.Base(fp), line, path.Base(name))
-	f.debug = append(f.debug, debugInfo{stack, info})
+	f.debug = append(f.debug, debugInfo{
+		Time:     time.Now().Format("02 15:04:05"),
+		FileInfo: fmt.Sprintf("%v:%v", path.Base(fp), line),
+		Stack:    path.Base(name),
+		Info:     info,
+	})
 }
 
 func (f *Flow) SetOnClose(exit func()) *Flow {
