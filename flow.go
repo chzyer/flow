@@ -113,6 +113,12 @@ func (f *Flow) SetOnClose(exit func()) *Flow {
 }
 
 func (f *Flow) AddOnClose(exit func()) *Flow {
+	if f.IsClosed() {
+		f.appendDebug("add close after closed")
+		exit()
+		return f
+	}
+
 	f.onClose = append(f.onClose, exit)
 	return f
 }
@@ -157,6 +163,7 @@ func (f *Flow) Fork(n int) *Flow {
 	f.Add(1) // for f2
 
 	if f.IsClosed() {
+		f.appendDebug("fork when closed")
 		// stop-wait
 		// ->fork
 		// done
@@ -212,8 +219,8 @@ func (f *Flow) IsClose() chan struct{} {
 }
 
 func (f *Flow) Add(n int) {
-	atomic.AddInt32(f.ref, int32(n))
-	f.appendDebug(fmt.Sprintf("add: %v, ref: %v", n, *f.ref))
+	ref := atomic.AddInt32(f.ref, int32(n))
+	f.appendDebug(fmt.Sprintf("add: %v, ref: %v", n, ref))
 	f.wg.Add(n)
 }
 
@@ -231,16 +238,23 @@ func (f *Flow) getCaller() int {
 	return 0
 }
 
+func (f *Flow) getRef() int32 {
+	return atomic.LoadInt32(f.ref)
+}
+
 func (f *Flow) Done() {
 	f.wg.Done()
-	if atomic.AddInt32(f.ref, -1) == 0 {
+	ref := atomic.AddInt32(f.ref, -1)
+	f.appendDebug(fmt.Sprintf("done, ref: %v", ref))
+	if ref == 0 {
 		f.Stop()
 	}
 }
 
 func (f *Flow) DoneAndClose() {
-	f.Done()
-	f.appendDebug(fmt.Sprintf("done and close, ref: %v", *f.ref))
+	f.wg.Done()
+	ref := atomic.AddInt32(f.ref, -1)
+	f.appendDebug(fmt.Sprintf("done and close, ref: %v", ref))
 	f.Stop()
 }
 
