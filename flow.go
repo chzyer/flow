@@ -17,7 +17,7 @@ import (
 
 var (
 	pkgPath      = reflect.TypeOf(Flow{}).PkgPath()
-	DefaultDebug = false
+	DefaultDebug = true
 )
 
 type debugInfo struct {
