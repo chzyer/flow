@@ -170,6 +170,10 @@ func (f *Flow) CloseOrWait(duration time.Duration) bool {
 	}
 }
 
+func (f *Flow) Errorf(layout string, obj ...interface{}) {
+	f.Error(fmt.Errorf(layout, obj...))
+}
+
 func (f *Flow) Error(err error) {
 	f.errChan <- err
 }
